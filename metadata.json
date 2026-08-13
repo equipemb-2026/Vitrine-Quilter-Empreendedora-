@@ -1,0 +1,6 @@
+{
+  "name": "Vitrine Quilter Empreendedora 2026",
+  "description": "Vitrine online oficial do Desafio Quilter Empreendedora 2026. Conheça as peças artesanais exclusivas e entre em contato diretamente com as autoras pelo WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
