@@ -183,16 +183,39 @@ function onFormSubmit(e) {
     var colMap = mapHeaders(headerRow);
     
     // Se a coluna de ID não existe, não faz nada
-    if (!colMap[HEADERS.ID]) return;
+    if (colMap[HEADERS.ID] === undefined) {
+      Logger.log("Aviso: Coluna '" + HEADERS.ID + "' não encontrada no cabeçalho.");
+      return;
+    }
     
     var idColIndex = colMap[HEADERS.ID] + 1;
     var currentIdValue = sheet.getRange(lastRow, idColIndex).getValue();
     
-    // Gera ID sequencial apenas se ainda não existir
+    // Gera ID no formato INICIAIS-DATA-SEQUENCIAL apenas se ainda não existir
     if (!currentIdValue || String(currentIdValue).trim() === "") {
-      var nextSequence = calculateNextSequence(sheet, idColIndex, lastRow);
-      var generatedId = "QES-" + padZero(nextSequence, 4);
-      sheet.getRange(lastRow, idColIndex).setValue(generatedId);
+      var rowValues = sheet.getRange(lastRow, 1, 1, sheet.getLastColumn()).getValues()[0];
+      var rawName = getRowVal(rowValues, colMap, HEADERS.NAME);
+      var rawTimestamp = getRowVal(rowValues, colMap, HEADERS.TIMESTAMP);
+      
+      if (!rawName || String(rawName).trim() === "") {
+        Logger.log("Erro no onFormSubmit: 'Nome Completo' ausente na linha " + lastRow + ". ID não gerado.");
+      } else if (!rawTimestamp) {
+        Logger.log("Erro no onFormSubmit: 'Carimbo de data/hora' ausente na linha " + lastRow + ". ID não gerado.");
+      } else {
+        var initials = extractNameInitials(rawName);
+        var dateFormatted = formatDateCode(rawTimestamp);
+        
+        if (!initials) {
+          Logger.log("Erro no onFormSubmit: Não foi possível extrair iniciais válidas de '" + rawName + "'. ID não gerado.");
+        } else if (!dateFormatted) {
+          Logger.log("Erro no onFormSubmit: Não foi possível formatar data válida de '" + rawTimestamp + "'. ID não gerado.");
+        } else {
+          var prefix = initials + "-" + dateFormatted;
+          var nextSeq = calculateNextAuthorDateSequence(sheet, idColIndex, lastRow, prefix);
+          var generatedId = prefix + "-" + padZero(nextSeq, 2);
+          sheet.getRange(lastRow, idColIndex).setValue(generatedId);
+        }
+      }
     }
     
     // Define valores administrativos padrão para novas submissões
@@ -377,7 +400,120 @@ function padZero(num, size) {
 }
 
 /**
- * Calcula o próximo ID sequencial a partir dos IDs existentes
+ * Extrai iniciais do nome: primeira letra do primeiro nome + primeira letra do último nome
+ * Ignora acentos, espaços extras e converte para maiúsculas
+ * Ex: "Marcia Baraldi" -> "MB", "Ana Paula de Souza" -> "AS", "Clara Silveira Mendonça" -> "CM"
+ */
+function extractNameInitials(rawName) {
+  if (!rawName) return "";
+  
+  // Remove acentos e normaliza
+  var clean = String(rawName)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+    
+  if (!clean) return "";
+  
+  var parts = clean.split(" ").filter(function(part) { return part.length > 0; });
+  if (parts.length === 0) return "";
+  
+  var firstInitial = parts[0].charAt(0).toUpperCase();
+  var lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+  
+  if (parts.length === 1) {
+    return firstInitial + firstInitial;
+  }
+  
+  return firstInitial + lastInitial;
+}
+
+/**
+ * Formata o carimbo de data/hora no formato ddMMyy (ex: 14/08/2026 -> 140826)
+ */
+function formatDateCode(val) {
+  if (!val) return "";
+  
+  var dateObj = null;
+  if (val instanceof Date) {
+    dateObj = val;
+  } else {
+    var parsed = new Date(val);
+    if (!isNaN(parsed.getTime())) {
+      dateObj = parsed;
+    }
+  }
+  
+  if (dateObj) {
+    try {
+      var timeZone = Session.getScriptTimeZone() || "GMT-3";
+      return Utilities.formatDate(dateObj, timeZone, "ddMMyy");
+    } catch (e) {
+      // Fallback manual se getScriptTimeZone falhar
+      var d = padZero(dateObj.getDate(), 2);
+      var m = padZero(dateObj.getMonth() + 1, 2);
+      var y = String(dateObj.getFullYear()).slice(-2);
+      return d + m + y;
+    }
+  }
+  
+  // Tratamento se for uma string (ex: "14/08/2026 10:30:00" ou "2026-08-14")
+  var str = String(val).trim();
+  var brMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (brMatch) {
+    var day = padZero(parseInt(brMatch[1], 10), 2);
+    var month = padZero(parseInt(brMatch[2], 10), 2);
+    var yearStr = brMatch[3];
+    var year = yearStr.length === 4 ? yearStr.slice(-2) : padZero(parseInt(yearStr, 10), 2);
+    return day + month + year;
+  }
+  
+  var isoMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (isoMatch) {
+    var y2 = isoMatch[1].slice(-2);
+    var m2 = padZero(parseInt(isoMatch[2], 10), 2);
+    var d2 = padZero(parseInt(isoMatch[3], 10), 2);
+    return d2 + m2 + y2;
+  }
+  
+  return "";
+}
+
+/**
+ * Calcula o próximo sequencial de dois dígitos para o mesmo autor e data (ex: prefix = "MB-140826")
+ * Verifica todos os IDs já existentes na coluna para impedir duplicidade
+ */
+function calculateNextAuthorDateSequence(sheet, idColIndex, lastRow, prefix) {
+  var maxSeq = 0;
+  if (lastRow <= 1) return 1;
+  
+  var idValues = sheet.getRange(2, idColIndex, lastRow - 1, 1).getValues();
+  var cleanPrefix = prefix.toUpperCase().trim();
+  
+  for (var i = 0; i < idValues.length; i++) {
+    var cellVal = String(idValues[i][0] || "").trim().toUpperCase();
+    if (!cellVal) continue;
+    
+    // Verifica se começa com o mesmo prefixo (ex: MB-140826-01)
+    if (cellVal.indexOf(cleanPrefix + "-") === 0) {
+      var suffix = cellVal.substring((cleanPrefix + "-").length);
+      var numMatch = suffix.match(/^(\d+)/);
+      if (numMatch) {
+        var seq = parseInt(numMatch[1], 10);
+        if (seq > maxSeq) {
+          maxSeq = seq;
+        }
+      }
+    }
+  }
+  
+  return maxSeq + 1;
+}
+
+/**
+ * Calcula o próximo ID sequencial a partir dos IDs existentes (legado)
  */
 function calculateNextSequence(sheet, idColIndex, lastRow) {
   var maxSeq = 0;
