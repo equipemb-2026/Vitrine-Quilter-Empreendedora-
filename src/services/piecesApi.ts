@@ -1,4 +1,4 @@
-import { ApiPiecesResponse, QuilterPiece } from '../types.ts';
+import { QuilterPiece } from '../types.ts';
 import { normalizePiecesList } from '../utils/normalizeUtils.ts';
 
 /**
@@ -23,20 +23,31 @@ export function extractErrorMessage(err: unknown): string {
 }
 
 /**
- * Serviço de comunicação com a API /api/pieces com timeout de 15s via AbortController
+ * Executa uma requisição individual para /api/pieces com timeout de 20s
  */
-export async function fetchPieces(forceRefresh: boolean = false, signal?: AbortSignal): Promise<{ success: boolean; pieces: QuilterPiece[]; total: number; error?: string }> {
+export async function fetchPiecesOnce(
+  forceRefresh: boolean = false,
+  parentSignal?: AbortSignal
+): Promise<{ success: boolean; pieces: QuilterPiece[]; total: number }> {
   const url = forceRefresh ? '/api/pieces?refresh=true' : '/api/pieces';
-  
-  // Timeout de 15 segundos no frontend
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     controller.abort();
-  }, 15000);
+  }, 20000); // 20 segundos de timeout para acomodar cold start do Apps Script
 
-  // Escuta se um signal externo foi cancelado
-  if (signal) {
-    signal.addEventListener('abort', () => controller.abort());
+  const onParentAbort = () => {
+    clearTimeout(timeoutId);
+    controller.abort();
+  };
+
+  if (parentSignal) {
+    if (parentSignal.aborted) {
+      clearTimeout(timeoutId);
+      controller.abort();
+    } else {
+      parentSignal.addEventListener('abort', onParentAbort);
+    }
   }
 
   try {
@@ -48,6 +59,9 @@ export async function fetchPieces(forceRefresh: boolean = false, signal?: AbortS
     });
 
     clearTimeout(timeoutId);
+    if (parentSignal) {
+      parentSignal.removeEventListener('abort', onParentAbort);
+    }
 
     const contentType = res.headers.get('content-type') || '';
     let data: any = null;
@@ -77,12 +91,48 @@ export async function fetchPieces(forceRefresh: boolean = false, signal?: AbortS
     };
   } catch (netErr: any) {
     clearTimeout(timeoutId);
-    if (netErr?.name === 'AbortError') {
+    if (parentSignal) {
+      parentSignal.removeEventListener('abort', onParentAbort);
+    }
+
+    if (netErr?.name === 'AbortError' || controller.signal.aborted) {
+      if (parentSignal?.aborted) {
+        throw new Error('Operação cancelada.');
+      }
       throw new Error('O tempo de conexão com a vitrine expirou. Por favor, tente novamente.');
     }
     throw new Error(extractErrorMessage(netErr));
   }
 }
+
+/**
+ * Serviço de busca com retry automático (Tentativa 1 -> espera 1,5s -> Tentativa 2)
+ */
+export async function fetchPieces(
+  forceRefresh: boolean = false,
+  signal?: AbortSignal
+): Promise<{ success: boolean; pieces: QuilterPiece[]; total: number }> {
+  try {
+    return await fetchPiecesOnce(forceRefresh, signal);
+  } catch (firstErr: any) {
+    if (signal?.aborted) {
+      throw firstErr;
+    }
+
+    console.warn('[Vitrine] 1ª tentativa falhou. Aguardando 1.5s para retry automático...', firstErr?.message);
+    
+    // Aguarda 1.5s antes da 2ª tentativa
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    if (signal?.aborted) {
+      throw new Error('Operação cancelada.');
+    }
+
+    // 2ª tentativa (sem loops adicionais)
+    return await fetchPiecesOnce(forceRefresh, signal);
+  }
+}
+
 
 
 

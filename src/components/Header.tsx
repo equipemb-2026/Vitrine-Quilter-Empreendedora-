@@ -7,7 +7,7 @@ interface HeaderProps {
   isRefreshing: boolean;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header: React.FC<HeaderProps> = React.memo(({
   totalPieces,
   onRefresh,
   isRefreshing,
@@ -48,4 +48,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
   );
-};
+});

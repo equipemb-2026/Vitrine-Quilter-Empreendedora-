@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { QuilterPiece, FilterState } from './types.ts';
 import { fetchPieces, extractErrorMessage } from './services/piecesApi.ts';
+import { getSessionCachedPieces, saveSessionCachedPieces } from './utils/sessionCache.ts';
 import { normalizeSearchText } from './utils/normalizeUtils.ts';
 import { Header } from './components/Header.tsx';
 import { SearchBar } from './components/SearchBar.tsx';
@@ -27,8 +28,19 @@ const DEFAULT_COURSE_OPTIONS = [
 ];
 
 export default function App() {
-  const [pieces, setPieces] = useState<QuilterPiece[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  // Inicialização com cache de sessão para renderização instantânea
+  const [pieces, setPieces] = useState<QuilterPiece[]>(() => {
+    const cached = getSessionCachedPieces();
+    return cached && cached.length > 0 ? cached : [];
+  });
+
+  // initialLoading é true APENAS quando não temos nenhum dado na tela ainda
+  const [initialLoading, setInitialLoading] = useState<boolean>(() => {
+    const cached = getSessionCachedPieces();
+    return !cached || cached.length === 0;
+  });
+
+  // refreshing é true quando já temos peças exibidas e estamos atualizando em segundo plano
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,9 +48,10 @@ export default function App() {
   const [selectedPiece, setSelectedPiece] = useState<QuilterPiece | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
-  // Controle de requisição ativa para evitar race conditions
+  // Controle de requisição ativa para evitar race conditions e StrictMode issues
   const abortControllerRef = useRef<AbortController | null>(null);
   const isFetchingRef = useRef<boolean>(false);
+  const reqIdRef = useRef<number>(0);
 
   // Estado dos Filtros
   const [filters, setFilters] = useState<FilterState>({
@@ -49,9 +62,12 @@ export default function App() {
     sortBy: 'featured',
   });
 
-  // Carrega as peças da API com proteção contra race conditions e múltiplos cliques
-  const loadPieces = useCallback(async (isRefresh: boolean = false) => {
-    if (isFetchingRef.current && !isRefresh) return;
+  // Carrega as peças da API com proteção contra race conditions, retry automático e fallback resiliente
+  const loadPieces = useCallback(async (isManualRefresh: boolean = false) => {
+    if (isFetchingRef.current && !isManualRefresh) return;
+
+    // Incrementa identificador sequencial para descartar respostas desatualizadas
+    const currentReqId = ++reqIdRef.current;
 
     // Cancela requisição anterior se ainda estiver em andamento
     if (abortControllerRef.current) {
@@ -62,35 +78,57 @@ export default function App() {
     abortControllerRef.current = controller;
     isFetchingRef.current = true;
 
-    if (isRefresh) {
-      setRefreshing(true);
+    // Ajusta o estado de carregamento de forma limpa
+    if (pieces.length === 0) {
+      setInitialLoading(true);
     } else {
-      setLoading(true);
+      setRefreshing(true);
     }
+
     setError(null);
 
     try {
-      const response = await fetchPieces(isRefresh, controller.signal);
+      // Chama a API com retry automático interno de 2 tentativas
+      const response = await fetchPieces(isManualRefresh, controller.signal);
+
+      // Se outra requisição foi disparada enquanto aguardávamos, descarta esta resposta
+      if (currentReqId !== reqIdRef.current) return;
+
       if (response.success && Array.isArray(response.pieces)) {
         setPieces(response.pieces);
+        saveSessionCachedPieces(response.pieces);
+        setError(null);
       } else {
-        throw new Error(response.error || 'Não foi possível carregar a vitrine.');
+        throw new Error('Não foi possível carregar a vitrine.');
       }
     } catch (err: unknown) {
-      // Se foi cancelado intencionalmente por nova requisição, não altera estado de erro
-      if (controller.signal.aborted) return;
-      setError(extractErrorMessage(err));
+      // Ignora erros se a requisição foi abortada intencionalmente
+      if (currentReqId !== reqIdRef.current || controller.signal.aborted) {
+        return;
+      }
+
+      const errorMsg = extractErrorMessage(err);
+      console.warn('[Vitrine] Falha no carregamento:', errorMsg);
+
+      // REGRA CRÍTICA: Se já existirem peças exibidas na tela, NUNCA as apague nem mostre tela branca/erro
+      setPieces((currentPieces) => {
+        if (currentPieces.length === 0) {
+          setError(errorMsg);
+        }
+        return currentPieces;
+      });
     } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
+      if (currentReqId === reqIdRef.current) {
+        setInitialLoading(false);
         setRefreshing(false);
         isFetchingRef.current = false;
       }
     }
   }, []);
 
+  // Executa no carregamento inicial da aplicação
   useEffect(() => {
-    loadPieces();
+    loadPieces(false);
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
@@ -244,13 +282,13 @@ export default function App() {
 
         {/* Grade de Peças ou Estados de Carregamento/Vazio */}
         <main id="main-content" className="pb-8">
-          {loading ? (
+          {initialLoading ? (
             <LoadingSkeleton />
-          ) : error ? (
+          ) : error && pieces.length === 0 ? (
             <ErrorState
               message={error}
               onRetry={() => loadPieces(false)}
-              isRetrying={loading || refreshing}
+              isRetrying={initialLoading || refreshing}
             />
           ) : filteredPieces.length === 0 ? (
             <EmptyState
@@ -285,4 +323,5 @@ export default function App() {
     </div>
   );
 }
+
 
