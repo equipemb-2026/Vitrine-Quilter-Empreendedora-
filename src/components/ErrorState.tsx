@@ -12,6 +12,20 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
   onRetry,
   isRetrying = false,
 }) => {
+  const displayMessage = React.useMemo(() => {
+    if (!message) return 'Ocorreu um erro ao carregar as peças da vitrine.';
+    if (typeof message === 'string') return message;
+    if (typeof message === 'object') {
+      try {
+        const obj = message as Record<string, any>;
+        return obj.error || obj.message || JSON.stringify(message);
+      } catch {
+        return 'Erro inesperado na comunicação com a vitrine.';
+      }
+    }
+    return String(message);
+  }, [message]);
+
   return (
     <div
       id="error-state"
@@ -26,7 +40,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
           Não foi possível exibir a vitrine
         </h3>
         <p className="text-sm text-stone-600 max-w-md">
-          {message}
+          {displayMessage}
         </p>
       </div>
 

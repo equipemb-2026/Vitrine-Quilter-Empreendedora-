@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { QuilterPiece, FilterState, StatusFilterOption } from './types.ts';
-import { fetchPieces } from './services/piecesApi.ts';
+import { fetchPieces, extractErrorMessage } from './services/piecesApi.ts';
 import { Header } from './components/Header.tsx';
 import { SearchBar } from './components/SearchBar.tsx';
 import { Filters } from './components/Filters.tsx';
@@ -60,8 +60,8 @@ export default function App() {
       } else {
         throw new Error(response.error || 'Falha ao carregar as peças');
       }
-    } catch (err: any) {
-      setError(err.message || 'Não foi possível carregar as peças da vitrine.');
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
