@@ -21,7 +21,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1607344645866-009c320b5ab8?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1598300042247-d088f8ab3a91?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5548991234567',
     publishedAt: '2026-08-10',
   },
   {
@@ -44,7 +44,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1584100936709-17852c0021c5?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5541987654321',
     publishedAt: '2026-08-11',
   },
   {
@@ -67,7 +67,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5531998877665',
     publishedAt: '2026-08-12',
   },
   {
@@ -90,7 +90,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5519981122334',
     publishedAt: '2026-08-09',
   },
   {
@@ -113,7 +113,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5551993456789',
     publishedAt: '2026-08-10',
   },
   {
@@ -136,7 +136,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1607344645866-009c320b5ab8?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1598300042247-d088f8ab3a91?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5511977665544',
     publishedAt: '2026-08-08',
   },
   {
@@ -159,7 +159,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1550684848-fac1c5b4e853?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5571992233445',
     publishedAt: '2026-08-12',
   },
   {
@@ -182,7 +182,7 @@ export const MOCK_PIECES: QuilterPiece[] = [
       back: 'https://images.unsplash.com/photo-1584100936595-c0654b55a2e2?auto=format&fit=crop&w=1200&q=80',
       detail: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=80',
     },
-    whatsapp: '551212345698',
+    whatsapp: '5547996543210',
     publishedAt: '2026-08-11',
   }
 ];

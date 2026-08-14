@@ -211,26 +211,55 @@ function onFormSubmit(e) {
 // ==============================================================================================
 
 /**
- * Cria o mapa de nome do cabeçalho -> índice da coluna
+ * Normaliza o texto de um cabeçalho para comparação tolerante (minúsculas, sem acentos e espaços colapsados)
+ */
+function normalizeHeaderKey(key) {
+  if (!key) return "";
+  return String(key)
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * Cria o mapa de nome do cabeçalho -> índice da coluna de forma dinâmica e tolerante
  */
 function mapHeaders(headerRow) {
   var map = {};
   for (var i = 0; i < headerRow.length; i++) {
-    var name = String(headerRow[i] || "").trim();
-    if (name) {
-      map[name] = i;
+    var rawName = String(headerRow[i] || "").trim();
+    if (rawName) {
+      // Mapeamento direto com o nome exato
+      map[rawName] = i;
+      // Mapeamento normalizado para tolerância de acentuação, maiúsculas/minúsculas e espaços extras
+      var normName = normalizeHeaderKey(rawName);
+      if (normName && map[normName] === undefined) {
+        map[normName] = i;
+      }
     }
   }
   return map;
 }
 
 /**
- * Obtém o valor de uma linha com base no nome do cabeçalho
+ * Obtém o valor de uma linha com base no nome do cabeçalho dinâmico
  */
 function getRowVal(row, colMap, headerName) {
+  if (!colMap || !headerName) return "";
+  
+  // 1. Busca pelo nome exato do cabeçalho
   if (colMap[headerName] !== undefined) {
     return row[colMap[headerName]];
   }
+  
+  // 2. Busca tolerante pelo nome normalizado (ex: "Descrição da peça", "Descrição da Peça", "Descricao da peca")
+  var normKey = normalizeHeaderKey(headerName);
+  if (colMap[normKey] !== undefined) {
+    return row[colMap[normKey]];
+  }
+  
   return "";
 }
 
