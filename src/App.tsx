@@ -30,7 +30,6 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [isMock, setIsMock] = useState<boolean>(false);
 
   // Modal de Detalhes
   const [selectedPiece, setSelectedPiece] = useState<QuilterPiece | null>(null);
@@ -58,7 +57,6 @@ export default function App() {
       const response = await fetchPieces(isRefresh);
       if (response.success && Array.isArray(response.pieces)) {
         setPieces(response.pieces);
-        setIsMock(Boolean(response.isMock));
       } else {
         throw new Error(response.error || 'Falha ao carregar as peças');
       }
@@ -186,7 +184,6 @@ export default function App() {
         {/* Cabeçalho */}
         <Header
           totalPieces={pieces.length}
-          isMock={isMock}
           onRefresh={() => loadPieces(true)}
           isRefreshing={refreshing}
         />

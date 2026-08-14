@@ -3,14 +3,12 @@ import { Sparkles, RefreshCw } from 'lucide-react';
 
 interface HeaderProps {
   totalPieces: number;
-  isMock: boolean;
   onRefresh: () => void;
   isRefreshing: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   totalPieces,
-  isMock,
   onRefresh,
   isRefreshing,
 }) => {
@@ -22,15 +20,6 @@ export const Header: React.FC<HeaderProps> = ({
           <Sparkles className="w-3 h-3 mr-1.5 text-rose-600 fill-rose-500/40" />
           Desafio Oficial 2026
         </span>
-
-        {isMock && (
-          <span
-            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-medium bg-amber-100/80 text-amber-900 border border-amber-200"
-            title="Exibindo catálogo de demonstração até configuração da planilha no Google Apps Script"
-          >
-            Modo Demonstração
-          </span>
-        )}
       </div>
 
       {/* Título Principal */}

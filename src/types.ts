@@ -29,7 +29,6 @@ export interface QuilterPiece {
 export interface ApiPiecesResponse {
   success: boolean;
   pieces: QuilterPiece[];
-  isMock?: boolean;
   total?: number;
   error?: string;
   warning?: string;
