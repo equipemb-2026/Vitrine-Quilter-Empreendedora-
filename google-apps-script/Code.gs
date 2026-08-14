@@ -53,17 +53,25 @@ var HEADERS = {
 
 /**
  * Endpoint HTTP GET chamado pelo proxy da Vitrine Web (/api/pieces)
+ * 
+ * Executa em alta performance:
+ * - 1 única leitura em lote de toda a planilha com getDataRange().getValues();
+ * - Mapeamento dinâmico e tolerante de cabeçalhos feito uma única vez;
+ * - Processamento 100% em memória de imagens, textos e números;
+ * - Conversão instantânea de links do Drive sem chamadas bloqueantes ao DriveApp no doGet.
  */
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(SHEET_NAME) || ss.getSheets()[0];
     
+    // Leitura em lote única de toda a planilha
     var data = sheet.getDataRange().getValues();
     if (data.length <= 1) {
       return createJsonResponse({ success: true, pieces: [], total: 0 });
     }
     
+    // Mapeia os índices das colunas uma única vez
     var headerRow = data[0];
     var colMap = mapHeaders(headerRow);
     
@@ -77,21 +85,26 @@ function doGet(e) {
       var rawAuthor = getRowVal(row, colMap, HEADERS.NAME);
       if (!rawTitle && !rawAuthor) continue;
       
-      // Regra de Publicação:
-      // Status aprovação == "Aprovada" E Publicar na vitrine == "Sim" (ou true)
+      // Requisitos de Publicação na Vitrine:
+      // 1. Status aprovação == "Aprovada"
+      // 2. Publicar na vitrine == "Sim" (ou true)
+      // 3. Data publicação preenchida
       var approvalStatus = normalizeText(getRowVal(row, colMap, HEADERS.APPROVAL));
       var publishStatus = normalizeText(getRowVal(row, colMap, HEADERS.PUBLISH));
+      var rawPublishedAt = getRowVal(row, colMap, HEADERS.PUBLISHED_AT);
+      var publishedDate = formatDate(rawPublishedAt);
       
       var isApproved = (approvalStatus.toLowerCase() === "aprovada" || approvalStatus.toLowerCase() === "aprovado");
       var isPublishable = (publishStatus.toLowerCase() === "sim" || publishStatus.toLowerCase() === "true" || publishStatus === "1");
+      var hasPublishedDate = (rawPublishedAt !== "" && rawPublishedAt !== null && rawPublishedAt !== undefined && String(rawPublishedAt).trim().length > 0);
       
-      if (isApproved && isPublishable) {
+      if (isApproved && isPublishable && hasPublishedDate) {
         // Regra do Selo Master:
         // Apenas quando a coluna administrativa "Master confirmada" for explicitamente verdadeira
         var rawMaster = getRowVal(row, colMap, HEADERS.MASTER);
         var isMaster = normalizeBoolean(rawMaster);
         
-        // Status da Peça (Disponível, Reservada, Vendida)
+        // Status da Peça (Disponível, Reservada, Vendida) com trim seguro
         var rawPieceStatus = normalizeText(getRowVal(row, colMap, HEADERS.PIECE_STATUS)) || "Disponível";
         var pieceStatus = "Disponível";
         if (rawPieceStatus.toLowerCase().indexOf("reservad") !== -1 || rawPieceStatus.toLowerCase().indexOf("negocia") !== -1) {
@@ -100,14 +113,14 @@ function doGet(e) {
           pieceStatus = "Vendida";
         }
         
-        // Tratar imagens do Google Drive
+        // Tratar imagens do Google Drive em memória (sem overhead de DriveApp)
         var frontRaw = getRowVal(row, colMap, HEADERS.PHOTO_FRONT);
         var backRaw = getRowVal(row, colMap, HEADERS.PHOTO_BACK);
         var detailRaw = getRowVal(row, colMap, HEADERS.PHOTO_DETAIL);
         
-        var frontUrl = convertDriveUrl(frontRaw, true);
-        var backUrl = convertDriveUrl(backRaw, true);
-        var detailUrl = convertDriveUrl(detailRaw, true);
+        var frontUrl = convertDriveUrl(frontRaw);
+        var backUrl = convertDriveUrl(backRaw);
+        var detailUrl = convertDriveUrl(detailRaw);
         
         // Parse de métodos e cursos em arrays
         var coursesArray = splitCommaList(getRowVal(row, colMap, HEADERS.COURSE));
@@ -121,10 +134,7 @@ function doGet(e) {
         var rawWhatsApp = String(getRowVal(row, colMap, HEADERS.WHATSAPP) || "").trim();
         var rawCep = String(getRowVal(row, colMap, HEADERS.CEP) || "").trim();
         
-        // Data de publicação formatada
-        var publishedDate = formatDate(getRowVal(row, colMap, HEADERS.PUBLISHED_AT));
-        
-        // Whitelist estrita de campos públicos (campos privados NUNCA são incluídos)
+        // Whitelist estrita de campos públicos (dados privados NUNCA são incluídos)
         var publicPiece = {
           id: String(getRowVal(row, colMap, HEADERS.ID) || ("QES-" + padZero(r, 4))).trim(),
           author: normalizeText(rawAuthor),
@@ -287,10 +297,10 @@ function getRowVal(row, colMap, headerName) {
 }
 
 /**
- * Converte URLs do Google Drive para links públicos utilizáveis diretamente na web
- * Se makePublic=true, ajusta o compartilhamento do arquivo individual para 'Qualquer pessoa com o link'
+ * Converte URLs do Google Drive para links públicos de alta resolução (lh3.googleusercontent.com)
+ * Executado puramente em memória por RegExp sem bloquear com chamadas a DriveApp.
  */
-function convertDriveUrl(rawUrl, makePublic) {
+function convertDriveUrl(rawUrl) {
   if (!rawUrl) return "";
   var str = String(rawUrl).trim();
   if (!str) return "";
@@ -301,26 +311,9 @@ function convertDriveUrl(rawUrl, makePublic) {
   }
   
   // Extrai o ID do Google Drive
-  var fileId = "";
   var idMatch = str.match(/[-\w]{25,}/);
-  if (idMatch) {
-    fileId = idMatch[0];
-  }
-  
-  if (fileId) {
-    if (makePublic) {
-      try {
-        var file = DriveApp.getFileById(fileId);
-        // Garante que apenas este arquivo específico de peça aprovada possa ser lido
-        if (file.getSharingAccess() !== DriveApp.Access.ANYONE_WITH_LINK) {
-          file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-        }
-      } catch (e) {
-        // Ignora caso não tenha permissão de alterar compartilhamento
-      }
-    }
-    // Retorna URL de thumbnail de alta qualidade do Google UserContent
-    return "https://lh3.googleusercontent.com/d/" + fileId;
+  if (idMatch && idMatch[0]) {
+    return "https://lh3.googleusercontent.com/d/" + idMatch[0];
   }
   
   return str;

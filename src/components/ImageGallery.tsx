@@ -48,6 +48,7 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({ images, title, autho
             src={activeImage.url}
             alt={`${title} - Foto ${activeImage.label} por ${author}`}
             loading="eager"
+            decoding="async"
             className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-102 cursor-zoom-in"
             onClick={() => setIsLightboxOpen(true)}
             onError={() => handleImageError(activeImage.url!)}

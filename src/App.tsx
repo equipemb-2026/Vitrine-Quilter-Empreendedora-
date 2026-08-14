@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { QuilterPiece, FilterState, StatusFilterOption } from './types.ts';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { QuilterPiece, FilterState } from './types.ts';
 import { fetchPieces, extractErrorMessage } from './services/piecesApi.ts';
+import { normalizeSearchText } from './utils/normalizeUtils.ts';
 import { Header } from './components/Header.tsx';
 import { SearchBar } from './components/SearchBar.tsx';
 import { Filters } from './components/Filters.tsx';
@@ -35,6 +36,10 @@ export default function App() {
   const [selectedPiece, setSelectedPiece] = useState<QuilterPiece | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
+  // Controle de requisição ativa para evitar race conditions
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const isFetchingRef = useRef<boolean>(false);
+
   // Estado dos Filtros
   const [filters, setFilters] = useState<FilterState>({
     searchQuery: '',
@@ -44,8 +49,19 @@ export default function App() {
     sortBy: 'featured',
   });
 
-  // Carrega as peças da API
+  // Carrega as peças da API com proteção contra race conditions e múltiplos cliques
   const loadPieces = useCallback(async (isRefresh: boolean = false) => {
+    if (isFetchingRef.current && !isRefresh) return;
+
+    // Cancela requisição anterior se ainda estiver em andamento
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    isFetchingRef.current = true;
+
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -54,29 +70,41 @@ export default function App() {
     setError(null);
 
     try {
-      const response = await fetchPieces(isRefresh);
+      const response = await fetchPieces(isRefresh, controller.signal);
       if (response.success && Array.isArray(response.pieces)) {
         setPieces(response.pieces);
       } else {
-        throw new Error(response.error || 'Falha ao carregar as peças');
+        throw new Error(response.error || 'Não foi possível carregar a vitrine.');
       }
     } catch (err: unknown) {
+      // Se foi cancelado intencionalmente por nova requisição, não altera estado de erro
+      if (controller.signal.aborted) return;
       setError(extractErrorMessage(err));
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+        isFetchingRef.current = false;
+      }
     }
   }, []);
 
   useEffect(() => {
     loadPieces();
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
   }, [loadPieces]);
 
   // Opções dinâmicas de cursos
   const courseOptions = useMemo(() => {
     const coursesSet = new Set<string>(DEFAULT_COURSE_OPTIONS);
     pieces.forEach((p) => {
-      p.courses?.forEach((c) => coursesSet.add(c));
+      p.courses?.forEach((c) => {
+        if (c && c.trim()) coursesSet.add(c.trim());
+      });
     });
     return Array.from(coursesSet).filter(Boolean);
   }, [pieces]);
@@ -85,17 +113,19 @@ export default function App() {
   const stateOptions = useMemo(() => {
     const statesSet = new Set<string>();
     pieces.forEach((p) => {
-      if (p.state) statesSet.add(p.state.trim().toUpperCase());
+      if (p.state && p.state.trim()) {
+        statesSet.add(p.state.trim().toUpperCase());
+      }
     });
     return Array.from(statesSet).sort();
   }, [pieces]);
 
   // Manipuladores de Filtro
-  const handleFilterChange = (newFilters: Partial<FilterState>) => {
+  const handleFilterChange = useCallback((newFilters: Partial<FilterState>) => {
     setFilters((prev) => ({ ...prev, ...newFilters }));
-  };
+  }, []);
 
-  const handleResetFilters = () => {
+  const handleResetFilters = useCallback(() => {
     setFilters({
       searchQuery: '',
       statusFilter: 'all',
@@ -103,7 +133,7 @@ export default function App() {
       selectedState: null,
       sortBy: 'featured',
     });
-  };
+  }, []);
 
   const hasActiveFilters = Boolean(
     filters.searchQuery.trim() !== '' ||
@@ -113,18 +143,21 @@ export default function App() {
     filters.sortBy !== 'featured'
   );
 
-  // Filtragem e Ordenação no Frontend
+  // Filtragem e Ordenação 100% no Frontend (zero chamadas HTTP ao filtrar ou buscar)
   const filteredPieces = useMemo(() => {
+    const normalizedQuery = normalizeSearchText(filters.searchQuery);
+
     return pieces
       .filter((piece) => {
-        // Busca textual (título ou autora)
-        if (filters.searchQuery.trim() !== '') {
-          const query = filters.searchQuery.toLowerCase().trim();
-          const matchTitle = (piece.title || '').toLowerCase().includes(query);
-          const matchAuthor = (piece.author || '').toLowerCase().includes(query);
-          const matchCity = (piece.city || '').toLowerCase().includes(query);
-          const matchId = (piece.id || '').toLowerCase().includes(query);
-          if (!matchTitle && !matchAuthor && !matchCity && !matchId) {
+        // Busca textual com suporte a acentos
+        if (normalizedQuery !== '') {
+          const matchTitle = normalizeSearchText(piece.title).includes(normalizedQuery);
+          const matchAuthor = normalizeSearchText(piece.author).includes(normalizedQuery);
+          const matchCity = normalizeSearchText(piece.city).includes(normalizedQuery);
+          const matchId = normalizeSearchText(piece.id).includes(normalizedQuery);
+          const matchDescription = normalizeSearchText(piece.description).includes(normalizedQuery);
+          
+          if (!matchTitle && !matchAuthor && !matchCity && !matchId && !matchDescription) {
             return false;
           }
         }
@@ -163,25 +196,25 @@ export default function App() {
         if (filters.sortBy === 'name-asc') {
           return (a.author || '').localeCompare(b.author || '', 'pt-BR');
         }
-        // 'featured': mantém a ordem da vitrine
+        // 'featured': preserva a ordem da vitrine
         return 0;
       });
   }, [pieces, filters]);
 
   // Abertura do modal
-  const handleOpenDetails = (piece: QuilterPiece) => {
+  const handleOpenDetails = useCallback((piece: QuilterPiece) => {
     setSelectedPiece(piece);
     setIsModalOpen(true);
-  };
+  }, []);
 
-  const handleCloseDetails = () => {
+  const handleCloseDetails = useCallback(() => {
     setIsModalOpen(false);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen flex flex-col bg-stone-50 selection:bg-rose-100 selection:text-rose-900">
       <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 space-y-8 sm:space-y-12">
-        {/* Cabeçalho */}
+        {/* Cabeçalho visível imediatamente */}
         <Header
           totalPieces={pieces.length}
           onRefresh={() => loadPieces(true)}
@@ -217,6 +250,7 @@ export default function App() {
             <ErrorState
               message={error}
               onRetry={() => loadPieces(false)}
+              isRetrying={loading || refreshing}
             />
           ) : filteredPieces.length === 0 ? (
             <EmptyState
@@ -237,15 +271,18 @@ export default function App() {
         </section>
       </div>
 
-      {/* Modal de Detalhes da Peça */}
-      <PieceDetailsModal
-        piece={selectedPiece}
-        isOpen={isModalOpen}
-        onClose={handleCloseDetails}
-      />
+      {/* Modal de Detalhes da Peça: Montado apenas quando aberto */}
+      {isModalOpen && selectedPiece && (
+        <PieceDetailsModal
+          piece={selectedPiece}
+          isOpen={isModalOpen}
+          onClose={handleCloseDetails}
+        />
+      )}
 
       {/* Rodapé */}
       <Footer />
     </div>
   );
 }
+

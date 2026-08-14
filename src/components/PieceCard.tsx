@@ -11,22 +11,23 @@ interface PieceCardProps {
   onOpenDetails: (piece: QuilterPiece) => void;
 }
 
-export const PieceCard: React.FC<PieceCardProps> = ({ piece, onOpenDetails }) => {
+export const PieceCard: React.FC<PieceCardProps> = React.memo(({ piece, onOpenDetails }) => {
   const [imgError, setImgError] = useState(false);
-  const frontImageUrl = piece.images?.front || '';
+  const frontImageUrl = piece.images?.front?.trim() || '';
 
   return (
     <article
       id={`card-piece-${piece.id}`}
       className="group flex flex-col bg-white rounded-3xl overflow-hidden border border-stone-200/90 shadow-xs hover:shadow-xl hover:border-rose-200/80 transition-all duration-300 transform hover:-translate-y-1"
     >
-      {/* Container da Imagem com Badges Flutuantes */}
+      {/* Container da Imagem com Aspect Ratio reservado (previne Cumulative Layout Shift) */}
       <div className="relative aspect-4/3 w-full bg-stone-100 overflow-hidden cursor-pointer">
         {!imgError && frontImageUrl ? (
           <img
             src={frontImageUrl}
             alt={`Peça ${piece.title} confeccionada por ${piece.author}`}
             loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover object-center transition-transform duration-500 group-hover:scale-105"
             onClick={() => onOpenDetails(piece)}
             onError={() => setImgError(true)}
@@ -39,7 +40,7 @@ export const PieceCard: React.FC<PieceCardProps> = ({ piece, onOpenDetails }) =>
             <div className="w-12 h-12 rounded-full bg-stone-200/70 flex items-center justify-center mb-2">
               <ImageOff className="w-6 h-6 text-stone-400" />
             </div>
-            <span className="text-xs font-medium text-stone-500">Foto em processamento</span>
+            <span className="text-xs font-medium text-stone-500">Fotografia em processamento</span>
           </div>
         )}
 
@@ -136,4 +137,5 @@ export const PieceCard: React.FC<PieceCardProps> = ({ piece, onOpenDetails }) =>
       </div>
     </article>
   );
-};
+});
+
